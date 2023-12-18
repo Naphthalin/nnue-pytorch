@@ -372,6 +372,7 @@ struct SparseBatch
         is_white = new float[size];
         outcome = new float[size];
         score = new float[size];
+        sharpness = new float[size];
         white = new int[size * FeatureSet<Ts...>::MAX_ACTIVE_FEATURES];
         black = new int[size * FeatureSet<Ts...>::MAX_ACTIVE_FEATURES];
         white_values = new float[size * FeatureSet<Ts...>::MAX_ACTIVE_FEATURES];
@@ -404,6 +405,7 @@ struct SparseBatch
     float* is_white;
     float* outcome;
     float* score;
+    float* sharpness;
     int num_active_white_features;
     int num_active_black_features;
     int max_active_features;
@@ -419,6 +421,7 @@ struct SparseBatch
         delete[] is_white;
         delete[] outcome;
         delete[] score;
+        delete[] sharpness;
         delete[] white;
         delete[] black;
         delete[] white_values;
@@ -435,6 +438,7 @@ private:
         is_white[i] = static_cast<float>(e.pos.sideToMove() == Color::White);
         outcome[i] = (e.result + 1.0f) / 2.0f;
         score[i] = e.score;
+        sharpness[i] = e.sharpness;
         psqt_indices[i] = (e.pos.piecesBB().count() - 1) / 4;
         layer_stack_indices[i] = psqt_indices[i];
         fill_features(FeatureSet<Ts...>{}, i, e);
@@ -826,6 +830,7 @@ std::function<bool(const TrainingDataEntry&)> make_skip_predicate(bool filtered,
             // having to remove them from the dataset, as otherwise the we lose some
             // compression ability.
             static constexpr int VALUE_NONE = 32002;
+            static constexpr int VALUE_MAX_SHARPNESS = 255;
 
             static constexpr double desired_piece_count_weights[33] = {
                 1.000000,
@@ -872,6 +877,9 @@ std::function<bool(const TrainingDataEntry&)> make_skip_predicate(bool filtered,
 
             // Allow for predermined filtering without the need to remove positions from the dataset.
             if (e.score == VALUE_NONE)
+                return true;
+
+            if (e.sharpness == 0 || e.sharpness >= VALUE_MAX_SHARPNESS)
                 return true;
 
             if (e.ply <= early_fen_skipping)
@@ -941,6 +949,7 @@ extern "C" {
         int num_fens,
         const char* const* fens,
         int* scores,
+        int* sharpnesses,
         int* plies,
         int* results
     )
@@ -953,6 +962,7 @@ extern "C" {
             e.pos = Position::fromFen(fens[i]);
             movegen::forEachLegalMove(e.pos, [&](Move m){e.move = m;});
             e.score = scores[i];
+            e.sharpness = sharpnesses[i];
             e.ply = plies[i];
             e.result = results[i];
         }
