@@ -88,7 +88,7 @@ def apply_rotate_right(perm, indices):
 
 def get_swapped_zero_positive_count(actmat_flat, use_cupy=True):
     if use_cupy:
-        actmat_flat = cp.asarray(actmat_flat, dtype=cp.int8)
+        actmat_flat = np.asarray(actmat_flat, dtype=np.int8)
 
     shape = actmat_flat.shape
     # Group into blocks that are processed at once during inference
@@ -97,9 +97,9 @@ def get_swapped_zero_positive_count(actmat_flat, use_cupy=True):
 
     if use_cupy:
         # Calculate number of zeros in each block
-        num_zeros = cp.sum(actmat_chunked, axis=2, keepdims=True)
+        num_zeros = np.sum(actmat_chunked, axis=2, keepdims=True)
         # Broadcast back to the same shape as actmat_chunked so it's easier to work with
-        num_zeros = cp.tile(num_zeros, (1, 1, ZERO_BLOCK_SIZE))
+        num_zeros = np.tile(num_zeros, (1, 1, ZERO_BLOCK_SIZE))
 
         # Marks an element if all other elements in a block are zero.
         #
@@ -110,13 +110,13 @@ def get_swapped_zero_positive_count(actmat_flat, use_cupy=True):
         # actmat_chunked      = [... [... [1, 1, 0, 1], [0, 0, 1, 0], [1, 1, 1, 1] ...] ...]
         # rest_zero_indicator = [... [... [0, 0, 1, 0], [0, 0, 0, 0], [1, 1, 1, 1] ...] ...]
         #
-        rest_zero_indicator = (num_zeros - actmat_chunked == ZERO_BLOCK_SIZE - 1).reshape(shape).astype(cp.int8)
+        rest_zero_indicator = (num_zeros - actmat_chunked == ZERO_BLOCK_SIZE - 1).reshape(shape).astype(np.int8)
 
         # Sum all possible pairs of elements in a single sample of actmat_flat and rest_zero_indicator.
         # Aggregate sum over the whole batch.
         # This tells us how much "good" a swap of i-th and j-th slices would do. It doesn't consider
         # how much "bad" it would do though, that will be accounted for later, for performance reasons.
-        swapped_zero_count = cp.einsum('bi,bj->ij', actmat_flat, rest_zero_indicator, dtype=int)
+        swapped_zero_count = np.einsum('bi,bj->ij', actmat_flat, rest_zero_indicator, dtype=int)
 
     else:
         # Same operation but with numpy
@@ -146,8 +146,8 @@ def get_swapped_zero_increase(actmat, use_cupy=True):
         # This is the place where we account for how much "bad" it would do.
         # It is done here because we process earlier in batches, but this operation is distributive,
         # so it needs to only be done once at the end.
-        swapped_zero_increase = swapped_zero_count - cp.reshape(cp.diag(swapped_zero_count), (1, n_neurons))
-        swapped_zero_increase = cp.asnumpy(swapped_zero_increase)
+        swapped_zero_increase = swapped_zero_count - np.reshape(np.diag(swapped_zero_count), (1, n_neurons))
+        swapped_zero_increase = np.asnumpy(swapped_zero_increase)
 
     else:
         swapped_zero_increase = swapped_zero_count - np.reshape(np.diag(swapped_zero_count), (1, n_neurons))
@@ -253,9 +253,9 @@ def make_swaps_3(actmat, use_cupy=True):
     if use_cupy:
         # We don't want to have to go through an enormous array so compress it to represent blocks rather than neurons
         # Cupy doesn't support a list of axes so we go one by one.
-        max_values = cp.amax(cp.reshape(score_changes, compressed_shape), axis=5, keepdims=False)
-        max_values = cp.amax(max_values, axis=3, keepdims=False)
-        max_values = cp.amax(max_values, axis=1, keepdims=False)
+        max_values = np.amax(np.reshape(score_changes, compressed_shape), axis=5, keepdims=False)
+        max_values = np.amax(max_values, axis=3, keepdims=False)
+        max_values = np.amax(max_values, axis=1, keepdims=False)
     else:
         max_values = np.amax(np.reshape(score_changes, compressed_shape), axis=(5, 3, 1), keepdims=False)
 
@@ -310,7 +310,7 @@ def make_swaps_3(actmat, use_cupy=True):
 def find_perm_impl(actmat):
     actmat = np.reshape(actmat, (actmat.shape[0] * 2, actmat.shape[1]//2))
     if USE_CUPY:
-        actmat = cp.asarray(actmat, dtype=cp.int8)
+        actmat = np.asarray(actmat, dtype=np.int8)
     actmat_orig = actmat.copy()
 
     total_score_change = 0
@@ -397,7 +397,7 @@ def forward_ft(model, us, them, white_indices, white_values, black_indices, blac
 
 def eval_ft(model, batch):
     with torch.no_grad():
-        us, them, white_indices, white_values, black_indices, black_values, outcome, score, psqt_indices, layer_stack_indices = batch.contents.get_tensors('cuda')
+        us, them, white_indices, white_values, black_indices, black_values, outcome, score, sharpness, psqt_indices, layer_stack_indices = batch.contents.get_tensors('cuda')
         res = forward_ft(model, us, them, white_indices, white_values, black_indices, black_values, psqt_indices, layer_stack_indices)
         return res
 

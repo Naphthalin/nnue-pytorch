@@ -20,6 +20,7 @@ class SparseBatch(ctypes.Structure):
         ('is_white', ctypes.POINTER(ctypes.c_float)),
         ('outcome', ctypes.POINTER(ctypes.c_float)),
         ('score', ctypes.POINTER(ctypes.c_float)),
+        ('sharpness', ctypes.POINTER(ctypes.c_float)),
         ('num_active_white_features', ctypes.c_int),
         ('num_active_black_features', ctypes.c_int),
         ('max_active_features', ctypes.c_int),
@@ -40,9 +41,10 @@ class SparseBatch(ctypes.Structure):
         them = 1.0 - us
         outcome = torch.from_numpy(np.ctypeslib.as_array(self.outcome, shape=(self.size, 1))).pin_memory().to(device=device, non_blocking=True)
         score = torch.from_numpy(np.ctypeslib.as_array(self.score, shape=(self.size, 1))).pin_memory().to(device=device, non_blocking=True)
+        sharpness = torch.from_numpy(np.ctypeslib.as_array(self.sharpness, shape=(self.size, 1))).pin_memory().to(device=device, non_blocking=True)
         psqt_indices = torch.from_numpy(np.ctypeslib.as_array(self.psqt_indices, shape=(self.size,))).long().pin_memory().to(device=device, non_blocking=True)
         layer_stack_indices = torch.from_numpy(np.ctypeslib.as_array(self.layer_stack_indices, shape=(self.size,))).long().pin_memory().to(device=device, non_blocking=True)
-        return us, them, white_indices, white_values, black_indices, black_values, outcome, score, psqt_indices, layer_stack_indices
+        return us, them, white_indices, white_values, black_indices, black_values, outcome, score, sharpness, psqt_indices, layer_stack_indices
 
 SparseBatchPtr = ctypes.POINTER(SparseBatch)
 
