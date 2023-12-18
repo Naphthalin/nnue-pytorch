@@ -6380,6 +6380,9 @@ namespace binpack
             // Evaluation value returned from Learner::search()
             int16_t score;
 
+            // WDL sharpness from Lc0 data
+            int16_t sharpness;
+
             // PV first move
             // Used when finding the match rate with the teacher
             StockfishMove move;
@@ -6399,7 +6402,7 @@ namespace binpack
 
             // 32 + 2 + 2 + 2 + 1 + 1 = 40bytes
         };
-        static_assert(sizeof(PackedSfenValue) == 40);
+        static_assert(sizeof(PackedSfenValue) == 42);
         // Class that handles bitstream
 
         // useful when doing aspect encoding
@@ -6857,6 +6860,7 @@ namespace binpack
         chess::Position pos;
         chess::Move move;
         std::int16_t score;
+        std::int16_t sharpness;
         std::uint16_t ply;
         std::int16_t result;
 
@@ -6923,6 +6927,7 @@ namespace binpack
         ret.pos = nodchip::pos_from_packed_sfen(psv.sfen);
         ret.move = psv.move.toMove();
         ret.score = psv.score;
+        ret.sharpness = psv.sharpness;
         ret.ply = psv.gamePly;
         ret.result = psv.game_result;
 
@@ -6938,6 +6943,7 @@ namespace binpack
         sp.pack(plain.pos);
 
         ret.score = plain.score;
+        ret.sharpness = plain.sharpness;
         ret.move = nodchip::StockfishMove::fromMove(plain.move);
         ret.gamePly = plain.ply;
         ret.game_result = plain.result;
@@ -6956,7 +6962,7 @@ namespace binpack
 
     struct PackedTrainingDataEntry
     {
-        unsigned char bytes[32];
+        unsigned char bytes[34];
     };
 
     [[nodiscard]] inline std::size_t usedBitsSafe(std::size_t value)
@@ -6977,7 +6983,8 @@ namespace binpack
             entry(entry_),
             numPlies(numPlies_),
             movetext(movetext_),
-            m_lastScore(-entry_.score)
+            m_lastScore(-entry_.score),
+            m_lastSharpness(entry_.sharpness)
         {
 
         }
@@ -7031,9 +7038,10 @@ namespace binpack
         [[nodiscard]] TrainingDataEntry nextEntry()
         {
             entry.pos.doMove(entry.move);
-            auto [move, score] = nextMoveScore(entry.pos);
+            auto [move, score, sharpness] = nextMoveScore(entry.pos);
             entry.move = move;
             entry.score = score;
+            entry.sharpness = sharpness;
             entry.ply += 1;
             entry.result = -entry.result;
             return entry;
@@ -7044,10 +7052,11 @@ namespace binpack
             return m_numReadPlies < numPlies;
         }
 
-        [[nodiscard]] std::pair<chess::Move, std::int16_t> nextMoveScore(const chess::Position& pos)
+        [[nodiscard]] std::tuple<chess::Move, std::int16_t, std::int16_t> nextMoveScore(const chess::Position& pos)
         {
             chess::Move move;
             std::int16_t score;
+            std::int16_t sharpness;
 
             const chess::Color sideToMove = pos.sideToMove();
             const chess::Bitboard ourPieces = pos.piecesBB(sideToMove);
@@ -7166,10 +7175,12 @@ namespace binpack
 
             score = m_lastScore + unsignedToSigned(extractVle16(scoreVleBlockSize));
             m_lastScore = -score;
+            sharpness = m_lastSharpness + unsignedToSigned(extractVle16(scoreVleBlockSize));
+            m_lastSharpness = sharpness;
 
             ++m_numReadPlies;
 
-            return {move, score};
+            return {move, score, sharpness};
         }
 
         [[nodiscard]] std::size_t numReadBytes()
@@ -7181,6 +7192,7 @@ namespace binpack
         std::size_t m_readBitsLeft = 8;
         std::size_t m_readOffset = 0;
         std::int16_t m_lastScore = 0;
+        std::int16_t m_lastSharpness = 0;
         std::uint16_t m_numReadPlies = 0;
     };
 
@@ -7195,6 +7207,7 @@ namespace binpack
             movetext.clear();
             m_bitsLeft = 0;
             m_lastScore = -e.score;
+            m_lastSharpness = e.sharpness;
         }
 
         void addBitsLE8(std::uint8_t bits, std::size_t count)
@@ -7234,7 +7247,7 @@ namespace binpack
         }
 
 
-        void addMoveScore(const chess::Position& pos, chess::Move move, std::int16_t score)
+        void addMoveScore(const chess::Position& pos, chess::Move move, std::int16_t score, std::int16_t sharpness)
         {
             const chess::Color sideToMove = pos.sideToMove();
             const chess::Bitboard ourPieces = pos.piecesBB(sideToMove);
@@ -7343,6 +7356,9 @@ namespace binpack
             std::uint16_t scoreDelta = signedToUnsigned(score - m_lastScore);
             addBitsVle16(scoreDelta, scoreVleBlockSize);
             m_lastScore = -score;
+            std::uint16_t sharpnessDelta = signedToUnsigned(sharpness - m_lastSharpness);
+            addBitsVle16(sharpnessDelta, scoreVleBlockSize);
+            m_lastSharpness = sharpness;
 
             ++numPlies;
         }
@@ -7350,6 +7366,7 @@ namespace binpack
     private:
         std::size_t m_bitsLeft = 0;
         std::int16_t m_lastScore = 0;
+        std::int16_t m_lastSharpness = 0;
     };
 
 
@@ -7360,7 +7377,7 @@ namespace binpack
         auto compressedPos = plain.pos.compress();
         auto compressedMove = plain.move.compress();
 
-        static_assert(sizeof(compressedPos) + sizeof(compressedMove) + 6 == sizeof(PackedTrainingDataEntry));
+        static_assert(sizeof(compressedPos) + sizeof(compressedMove) + 8 == sizeof(PackedTrainingDataEntry));
 
         std::size_t offset = 0;
         compressedPos.writeToBigEndian(packed.bytes);
@@ -7370,6 +7387,8 @@ namespace binpack
         std::uint16_t pr = plain.ply | (signedToUnsigned(plain.result) << 14);
         packed.bytes[offset++] = signedToUnsigned(plain.score) >> 8;
         packed.bytes[offset++] = signedToUnsigned(plain.score);
+        packed.bytes[offset++] = signedToUnsigned(plain.sharpness) >> 8;
+        packed.bytes[offset++] = signedToUnsigned(plain.sharpness);
         packed.bytes[offset++] = pr >> 8;
         packed.bytes[offset++] = pr;
         packed.bytes[offset++] = plain.pos.rule50Counter() >> 8;
@@ -7390,6 +7409,8 @@ namespace binpack
         plain.move = compressedMove.decompress();
         offset += sizeof(compressedMove);
         plain.score = unsignedToSigned((packed.bytes[offset] << 8) | packed.bytes[offset+1]);
+        offset += 2;
+        plain.sharpness = unsignedToSigned((packed.bytes[offset] << 8) | packed.bytes[offset+1]);
         offset += 2;
         std::uint16_t pr = (packed.bytes[offset] << 8) | packed.bytes[offset+1];
         plain.ply = pr & 0x3FFF;
@@ -7423,7 +7444,7 @@ namespace binpack
             if (isCont)
             {
                 // add to movelist
-                m_movelist.addMoveScore(e.pos, e.move, e.score);
+                m_movelist.addMoveScore(e.pos, e.move, e.score, e.sharpness);
             }
             else
             {
@@ -7902,6 +7923,7 @@ namespace binpack
             if (key == "fen"sv) e.pos = chess::Position::fromFen(value.c_str());
             if (key == "move"sv) move = value;
             if (key == "score"sv) e.score = std::stoi(value);
+            if (key == "sharpness"sv) e.sharpness = std::stoi(value);
             if (key == "ply"sv) e.ply = std::stoi(value);
             if (key == "result"sv) e.result = std::stoi(value);
         }
