@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch import autograd
-import numpy as cp
+import cupy as cp
 import math
 
 def _find_nearest_divisor(value, target):

@@ -146,7 +146,7 @@ def main():
   checkpoint_callback = pl.callbacks.ModelCheckpoint(save_last=args.save_last_network, every_n_epochs=args.network_save_period, save_top_k=-1)
   trainer = pl.Trainer.from_argparse_args(args, callbacks=[checkpoint_callback], logger=tb_logger)
 
-  main_device = trainer.root_device if trainer.strategy.root_device.index is None else 'cuda:' + str(trainer.strategy.root_device.index)
+  main_device = trainer.strategy.root_device if trainer.strategy.root_device.index is None else 'cuda:' + str(trainer.strategy.root_device.index)
 
   nnue.to(device=main_device)
 
@@ -165,7 +165,7 @@ def main():
     main_device,
     args.epoch_size,
     args.validation_size)
-
+  print("starting something")
   trainer.fit(nnue, train, val)
 
   with open(os.path.join(logdir, 'training_finished'), 'w'):
