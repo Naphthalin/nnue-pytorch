@@ -207,19 +207,22 @@ get_sparse_batch_from_fens = dll.get_sparse_batch_from_fens
 get_sparse_batch_from_fens.restype = SparseBatchPtr
 get_sparse_batch_from_fens.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
 
-def make_sparse_batch_from_fens(feature_set, fens, scores, plies, results):
+def make_sparse_batch_from_fens(feature_set, fens, scores, sharpnesses, plies, results):
     results_ = (ctypes.c_int*len(scores))()
-    scores_ = (ctypes.c_int*len(plies))()
+    scores_ = (ctypes.c_int*len(sharpnesses))()
+    sharpnesses_ = (ctypes.c_int*len(plies))()
     plies_ = (ctypes.c_int*len(results))()
     fens_ = (ctypes.c_char_p * len(fens))()
     fens_[:] = [fen.encode('utf-8') for fen in fens]
     for i, v in enumerate(scores):
         scores_[i] = v
+    for i, v in enumerate(sharpnesses):
+        sharpnesses_[i] = v
     for i, v in enumerate(plies):
         plies_[i] = v
     for i, v in enumerate(results):
         results_[i] = v
-    b = get_sparse_batch_from_fens(feature_set.name.encode('utf-8'), len(fens), fens_, scores_, plies_, results_)
+    b = get_sparse_batch_from_fens(feature_set.name.encode('utf-8'), len(fens), fens_, scores_, sharpnesses_, plies_, results_)
     return b
 
 class SparseBatchProvider(TrainingDataProvider):
