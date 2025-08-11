@@ -262,7 +262,9 @@ class FixedNumBatchesDataset(Dataset):
   def __init__(self, dataset, num_batches):
     super(FixedNumBatchesDataset, self).__init__()
     self.dataset = dataset;
+    print(dataset)
     self.iter = iter(self.dataset)
+    print('4')
     self.num_batches = num_batches
 
   def __len__(self):
